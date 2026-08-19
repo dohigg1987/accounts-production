@@ -12,6 +12,7 @@ import {
   MessageBar,
   MessageBarActions,
   MessageBarBody,
+  MessageBarTitle,
   Select,
   Skeleton,
   SkeletonItem,
@@ -2925,10 +2926,11 @@ function FilingEvidence({
           Refresh
         </Button>
       </Head>
-      <MessageBar className="filing-message" intent="info">
+      <MessageBar className="filing-message" intent="warning">
         <MessageBarBody>
-          <b>Manual evidence record.</b> No action on this page contacts a
-          regulator or retrieves a regulator decision.
+          <MessageBarTitle>Manual evidence record</MessageBarTitle>
+          No action on this page contacts a regulator or retrieves a regulator
+          decision.
         </MessageBarBody>
       </MessageBar>
       <form className="filing-prepare" onSubmit={prepare}>
@@ -2986,7 +2988,7 @@ function FilingEvidence({
           intent="warning"
         >
           <MessageBarBody>
-            <b>No eligible accounts version.</b>{" "}
+            <MessageBarTitle>No eligible accounts version</MessageBarTitle>
             {unsignedFinal
               ? `${unsignedFinal} FINAL version${unsignedFinal === 1 ? " is" : "s are"} missing an active Filing authorised sign-off.`
               : "Move an accounts version to FINAL and record its Filing authorised sign-off first."}

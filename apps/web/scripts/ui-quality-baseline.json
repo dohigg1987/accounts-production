@@ -1,1 +1,10 @@
-{}
+{
+  "hand-built-alert|src/App.tsx|<div className=\"auth-message error\" role=\"alert\">": 1,
+  "hand-built-alert|src/App.tsx|<p className=\"form-error\" role=\"alert\">": 3,
+  "hand-built-alert|src/App.tsx|<section className=\"error-state membership-state\" role=\"alert\">": 1,
+  "hand-built-alert|src/App.tsx|<section className=\"error-state\" role=\"alert\">": 2,
+  "hand-built-alert|src/EngagementProduction.tsx|<div className=\"artefact-control error\" role=\"alert\">": 2,
+  "hand-built-alert|src/EngagementProduction.tsx|<div className=\"pack-warning\" role=\"alert\">": 1,
+  "hand-built-alert|src/EngagementProduction.tsx|<p className=\"artefact-error\" role=\"alert\">": 2,
+  "hand-built-alert|src/EngagementProduction.tsx|<p className=\"form-error\" role=\"alert\">": 1
+}

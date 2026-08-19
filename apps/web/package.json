@@ -8,7 +8,7 @@
     "build:production": "npm run test:ui-quality && node scripts/security-headers.mjs && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:ui-quality": "node --test scripts/ui-quality-guard.test.mjs scripts/forced-colors.test.mjs && node scripts/ui-quality-guard.mjs",
+    "test:ui-quality": "node --test scripts/ui-quality-guard.test.mjs scripts/forced-colors.test.mjs scripts/design-governance.test.mjs && node scripts/ui-quality-guard.mjs",
     "test:headers": "node --test scripts/security-headers.test.mjs",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed"

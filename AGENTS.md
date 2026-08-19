@@ -2,6 +2,8 @@
 
 These requirements apply to every change under `apps/web`.
 
+The authoritative implementation and release policy is [docs/FLUENT_UI_STANDARD.md](docs/FLUENT_UI_STANDARD.md). Read and apply it before changing any application UI. Its component mapping, token rules, visual QA matrix and release gates are mandatory; this file is the concise working summary.
+
 ## Fluent UI is the default
 
 - Use official Fluent UI React v9 components and tokens before writing bespoke controls or visual treatments.

@@ -69,6 +69,29 @@ test("engagement setup prevents incompatible framework, sector and client combin
   await expect(framework).toHaveValue("FRS_105");
   await expect(sector).toHaveValue("NONE");
   await expect(sector.locator("option")).toHaveText(["None"]);
+  await expect(client).toHaveAttribute("title", "Harbour Trading Ltd");
+  await expect(dialog.getByText("Sector profile", { exact: true })).not.toContainText(
+    "*",
+  );
+
+  const desktopBounds = await dialog.boundingBox();
+  expect(desktopBounds).not.toBeNull();
+  expect(desktopBounds!.width).toBeLessThanOrEqual(672);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const narrowBounds = await dialog.boundingBox();
+  expect(narrowBounds).not.toBeNull();
+  expect(narrowBounds!.x).toBeGreaterThanOrEqual(0);
+  expect(narrowBounds!.x + narrowBounds!.width).toBeLessThanOrEqual(390);
+
+  const periodStart = await dialog.getByLabel("Period start").boundingBox();
+  const periodEnd = await dialog.getByLabel("Period end").boundingBox();
+  const narrowClient = await client.boundingBox();
+  expect(periodStart).not.toBeNull();
+  expect(periodEnd).not.toBeNull();
+  expect(narrowClient).not.toBeNull();
+  expect(periodEnd!.y).toBeGreaterThan(periodStart!.y);
+  expect(narrowClient!.x + narrowClient!.width).toBeLessThanOrEqual(390);
 });
 
 test("pilot preparation journey exposes source, mapping and adjustment evidence", async ({
@@ -130,7 +153,7 @@ test("pilot production journey reaches accounts evidence and filing record", asy
   await expect(
     page.getByRole("heading", { name: "Regulator filing record" }),
   ).toBeVisible();
-  await expect(page.getByText("Manual evidence record.")).toBeVisible();
+  await expect(page.getByText("Manual evidence record", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("table", { name: "Filing evidence attempts" }),
   ).toBeVisible();
