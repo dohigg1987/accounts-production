@@ -447,8 +447,8 @@ async function appendScopedEvents(
   new Uint8Array(eventBytes).set(encoded);
   const eventHash = await sha256(eventBytes);
   await tx`
-    insert into audit_event(event_id,occurred_at_utc,recorded_at_utc,tenant_id,organisation_id,engagement_id,actor_type,actor_id,event_type,object_type,object_id,previous_hash,correlation_id,metadata,event_hash)
-    values(${eventId},${occurredAt},${occurredAt},${ctx.tenantId},${scope.organisationId},${scope.engagementId},'USER',${ctx.actorId},${eventType},${objectType},${objectId},${previousHash},${ctx.correlationId},${tx.json(metadata)},${eventHash})`;
+    insert into audit_event(event_id,occurred_at_utc,tenant_id,organisation_id,engagement_id,actor_type,actor_id,event_type,object_type,object_id,previous_hash,correlation_id,metadata,event_hash)
+    values(${eventId},${occurredAt},${ctx.tenantId},${scope.organisationId},${scope.engagementId},'USER',${ctx.actorId},${eventType},${objectType},${objectId},${previousHash},${ctx.correlationId},${tx.json(metadata)},${eventHash})`;
   const idempotencyKey = `${ctx.correlationId}:${eventType}:${objectType}:${objectId}`;
   await tx`insert into outbox_event(id,tenant_id,aggregate_type,aggregate_id,event_type,payload,correlation_id,idempotency_key)
     values(${crypto.randomUUID()},${ctx.tenantId},${objectType},${objectId},${eventType},${tx.json(metadata)},${ctx.correlationId},${idempotencyKey})`;
@@ -5409,7 +5409,7 @@ async function auditHistory(
       await engagementAccess(tx, ctx, engagementId);
       return json({
         items:
-          await tx`select event_id,occurred_at_utc,actor_id,event_type,object_type,object_id,reason,correlation_id,metadata,event_hash
+          await tx`select event_id,occurred_at_utc,recorded_at_utc,actor_id,event_type,object_type,object_id,reason,correlation_id,metadata,event_hash
         from audit_event where tenant_id=${ctx.tenantId} and engagement_id=${engagementId} order by occurred_at_utc desc,event_id desc limit 250`,
       });
     });
