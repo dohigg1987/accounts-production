@@ -301,6 +301,11 @@ export type WorkingPaperLibraryItem = {
   overrideReason: string | null;
   deployedWorkingPaperId: string | null;
   deployedApplicability: string | null;
+  governanceStatus: "APPROVED" | "BASELINE" | "CUSTOM";
+  provenanceLabel: string;
+  controlledFallback: boolean;
+  serviceFamily: "ACCOUNTS_PRODUCTION" | "CUSTOM";
+  applicabilityLayer: "CORE" | "FRAMEWORK" | "SECTOR" | "ENTITY_FORM" | "CLIENT";
 };
 export type WorkingPaperRisk = {
   id: string;
@@ -1238,7 +1243,7 @@ export const api = {
     id: string,
     templateCodes?: string[],
   ) =>
-    request<{ created: number; skipped: number; items: WorkingPaper[] }>(
+    request<{ created: number; skipped: number; replaced: number; controlledFallbacks: number; items: WorkingPaper[] }>(
       `/v1/engagements/${encodeURIComponent(id)}/working-papers/deploy`,
       context,
       {
