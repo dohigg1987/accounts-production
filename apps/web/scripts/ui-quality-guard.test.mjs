@@ -18,12 +18,12 @@ async function fixture(files) {
 
 test("detects every prohibited UI source pattern", async (t) => {
   const root = await fixture({
-    "bad.tsx": `export const Bad = () => <><button onClick={() => window.confirm("Sure?")}>Go</button><dt>Content hash</dt><code>{item.content_hash}</code></>`,
+    "bad.tsx": `export const Bad = () => <><button onClick={() => window.confirm("Sure?")}>Go</button><div role="alert">Failed</div><dt>Content hash</dt><code>{item.content_hash}</code></>`,
     "bad.css": `.thing.fui-Button { font-size: 11px; border-radius: 12px; }`,
   });
   t.after(() => rm(root, { recursive: true, force: true }));
   const rules = new Set((await auditSource(root)).map(({ rule }) => rule));
-  assert.deepEqual(rules, new Set(["browser-dialog", "off-ramp-radius", "private-fluent-selector", "small-font", "visible-hash"]));
+  assert.deepEqual(rules, new Set(["browser-dialog", "hand-built-alert", "off-ramp-radius", "private-fluent-selector", "small-font", "visible-hash"]));
 });
 
 test("detects confirm and prompt browser-dialog variants", async (t) => {

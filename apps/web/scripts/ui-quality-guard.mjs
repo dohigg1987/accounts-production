@@ -64,6 +64,19 @@ function auditFile(relativeFile, source) {
   }
 
   if (productionScript && extension === ".tsx") {
+    for (const match of source.matchAll(
+      /<(?:div|p|section|span|aside)\b[^>]*\brole\s*=\s*["']alert["'][^>]*>/gi,
+    ))
+      add(
+        findings,
+        "hand-built-alert",
+        relativeFile,
+        source,
+        match.index,
+        match[0].replace(/\s+/g, " "),
+        "Use Fluent MessageBar with a semantic intent instead of a hand-built alert surface",
+      );
+
     const visiblePatterns = [
       />\s*[^<>{\n]*(?:sha(?:-?256)?|hash)[^<>{\n]*</gi,
       /(["'`])[^\n"'`]*\b(?:sha(?:-?256)?|content hash|payload hash|event hash|signature hash)\b[^\n"'`]*\1/gi,

@@ -21,6 +21,12 @@ import {
   DataGridHeader,
   DataGridHeaderCell,
   DataGridRow,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
   Field,
   Input,
   Link as FluentLink,
@@ -32,6 +38,7 @@ import {
   MessageBar,
   MessageBarActions,
   MessageBarBody,
+  makeStyles,
   NavDrawer,
   NavDrawerBody,
   NavItem,
@@ -54,6 +61,7 @@ import {
   Tree,
   TreeItem,
   TreeItemLayout,
+  tokens,
 } from "@fluentui/react-components";
 import type { TableColumnDefinition } from "@fluentui/react-components";
 import {
@@ -2759,6 +2767,39 @@ function ClientsView({
   );
 }
 
+const useEngagementSetupStyles = makeStyles({
+  surface: {
+    width: "min(640px, calc(100vw - 32px))",
+    maxWidth: "640px",
+  },
+  form: {
+    display: "contents",
+  },
+  content: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+    gap: tokens.spacingVerticalL,
+    paddingBlock: tokens.spacingVerticalM,
+    "@media (max-width: 600px)": {
+      gridTemplateColumns: "minmax(0, 1fr)",
+    },
+  },
+  fullWidth: {
+    gridColumn: "1 / -1",
+    minWidth: 0,
+  },
+  control: {
+    width: "100%",
+    minWidth: 0,
+  },
+  error: {
+    gridColumn: "1 / -1",
+  },
+  empty: {
+    paddingBlock: tokens.spacingVerticalXXL,
+  },
+});
+
 function EngagementSetup({
   context,
   organisations,
@@ -2772,6 +2813,7 @@ function EngagementSetup({
   onClose: () => void;
   onCreated: (id: string) => Promise<void>;
 }) {
+  const styles = useEngagementSetupStyles();
   const initialOrganisation =
     organisations.find((item) => item.id === initialOrganisationId) ??
     organisations[0];
@@ -2795,8 +2837,6 @@ function EngagementSetup({
   const frameworks = permittedFrameworks(
     selectedOrganisation?.legal_form ?? "",
   );
-  const dialogRef = useRef<HTMLElement>(null);
-  useDialogFocus(dialogRef, true, onClose, busy);
   async function create(event: React.FormEvent) {
     event.preventDefault();
     if (form.periodEnd < form.periodStart) {
@@ -2824,155 +2864,164 @@ function EngagementSetup({
     }
   }
   return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy) onClose();
+    <Dialog
+      open
+      modalType="modal"
+      onOpenChange={(_, data) => {
+        if (!data.open && !busy) onClose();
       }}
     >
-      <section
-        ref={dialogRef}
-        className="modal engagement-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="engagement-title"
-        tabIndex={-1}
-      >
-        <div className="modal-head">
-          <div>
-            <p className="eyebrow">Engagement setup</p>
-            <h2 id="engagement-title">Create accounts period</h2>
-          </div>
-          <Tooltip content="Close engagement setup" relationship="description">
-            <FluentButton
-              appearance="subtle"
-              icon={<DismissRegular />}
-              onClick={onClose}
-              aria-label="Close engagement setup"
-              disabled={busy}
-            />
-          </Tooltip>
-        </div>
+      <DialogSurface className={styles.surface}>
         {!organisations.length ? (
-          <Empty
-            heading="Create a client first"
-            body="An engagement must belong to a legal entity in this workspace."
-          />
+          <DialogBody>
+            <DialogTitle>Create accounts period</DialogTitle>
+            <DialogContent className={styles.empty}>
+              <Empty
+                heading="Create a client first"
+                body="An engagement must belong to a legal entity in this workspace."
+              />
+            </DialogContent>
+            <DialogActions>
+              <FluentButton appearance="primary" onClick={onClose}>
+                Close
+              </FluentButton>
+            </DialogActions>
+          </DialogBody>
         ) : (
-          <form className="engagement-form" onSubmit={create}>
-            <Field label="Client" required>
-              <Select
-                value={form.organisationId}
-                onChange={(event) => {
-                  const organisationId = event.target.value;
-                  const legalForm =
-                    organisations.find((item) => item.id === organisationId)
-                      ?.legal_form ?? "";
-                  const requiredProfile = requiredSectorProfile(legalForm);
-                  const framework = requiredProfile ? "FRS_102" : form.framework;
-                  const sectorProfile = requiredProfile ?? "NONE";
-                  setForm({
-                    ...form,
-                    organisationId,
-                    framework,
-                    sectorProfile,
-                  });
-                }}
-              >
-                {organisations.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.legal_name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <div>
-              <Field label="Period start" required>
-                <Input
-                  type="date"
-                  value={form.periodStart}
-                  onChange={(event) =>
-                    setForm({ ...form, periodStart: event.target.value })
+          <form className={styles.form} onSubmit={create}>
+            <DialogBody>
+              <DialogTitle>Create accounts period</DialogTitle>
+              <DialogContent className={styles.content}>
+                <Field className={styles.fullWidth} label="Client" required>
+                  <Select
+                    className={styles.control}
+                    title={selectedOrganisation?.legal_name}
+                    value={form.organisationId}
+                    onChange={(event) => {
+                      const organisationId = event.target.value;
+                      const legalForm =
+                        organisations.find((item) => item.id === organisationId)
+                          ?.legal_form ?? "";
+                      const requiredProfile = requiredSectorProfile(legalForm);
+                      const framework = requiredProfile
+                        ? "FRS_102"
+                        : form.framework;
+                      const sectorProfile = requiredProfile ?? "NONE";
+                      setForm({
+                        ...form,
+                        organisationId,
+                        framework,
+                        sectorProfile,
+                      });
+                    }}
+                  >
+                    {organisations.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.legal_name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Period start" required>
+                  <Input
+                    className={styles.control}
+                    type="date"
+                    value={form.periodStart}
+                    onChange={(event) =>
+                      setForm({ ...form, periodStart: event.target.value })
+                    }
+                  />
+                </Field>
+                <Field label="Period end" required>
+                  <Input
+                    className={styles.control}
+                    type="date"
+                    value={form.periodEnd}
+                    onChange={(event) =>
+                      setForm({ ...form, periodEnd: event.target.value })
+                    }
+                  />
+                </Field>
+                <Field label="Reporting framework" required>
+                  <Select
+                    className={styles.control}
+                    value={form.framework}
+                    onChange={(event) => {
+                      const framework = event.target.value;
+                      const sectorProfile = reportingRegimeError(
+                        framework,
+                        form.sectorProfile,
+                        selectedOrganisation?.legal_form ?? "",
+                      )
+                        ? "NONE"
+                        : form.sectorProfile;
+                      setForm({ ...form, framework, sectorProfile });
+                    }}
+                  >
+                    {frameworks.map((value) => (
+                      <option key={value} value={value}>
+                        {value.replaceAll("_", " ")}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field
+                  label="Sector profile"
+                  required={
+                    requiredSectorProfile(
+                      selectedOrganisation?.legal_form ?? "",
+                    ) !== null
                   }
-                />
-              </Field>
-              <Field label="Period end" required>
-                <Input
-                  type="date"
-                  value={form.periodEnd}
-                  onChange={(event) =>
-                    setForm({ ...form, periodEnd: event.target.value })
+                  hint={
+                    sectorProfiles.length === 1 &&
+                    sectorProfiles[0]?.value === "NONE"
+                      ? "No sector-specific profile applies to this client and framework."
+                      : sectorProfiles.length === 1
+                        ? "This client type requires this reporting profile."
+                        : "Only profiles compatible with the framework and client type are shown."
                   }
-                />
-              </Field>
-            </div>
-            <Field label="Reporting framework" required>
-              <Select
-                value={form.framework}
-                onChange={(event) => {
-                  const framework = event.target.value;
-                  const sectorProfile = reportingRegimeError(
-                    framework,
-                    form.sectorProfile,
-                    selectedOrganisation?.legal_form ?? "",
-                  )
-                    ? "NONE"
-                    : form.sectorProfile;
-                  setForm({ ...form, framework, sectorProfile });
-                }}
-              >
-                {frameworks.map((value) => (
-                  <option key={value} value={value}>
-                    {value.replaceAll("_", " ")}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field
-              label="Sector profile"
-              required
-              hint={
-                sectorProfiles.length === 1 && sectorProfiles[0]?.value === "NONE"
-                  ? "No sector-specific reporting profile is compatible with this framework and client type."
-                  : sectorProfiles.length === 1
-                    ? "This client type requires this reporting profile."
-                  : "Only profiles compatible with the framework and client type are shown."
-              }
-            >
-              <Select
-                value={form.sectorProfile}
-                onChange={(event) =>
-                  setForm({ ...form, sectorProfile: event.target.value })
-                }
-              >
-                {sectorProfiles.map((profile) => (
-                  <option key={profile.value} value={profile.value}>
-                    {profile.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            {error && (
-              <p className="form-error" role="alert">
-                {error}
-              </p>
-            )}
-            <div className="modal-actions">
-              <FluentButton
-                type="button"
-                onClick={onClose}
-                disabled={busy}
-              >
-                Cancel
-              </FluentButton>
-              <FluentButton appearance="primary" type="submit" disabled={busy}>
-                {busy ? "Creating…" : "Create engagement"}
-              </FluentButton>
-            </div>
+                >
+                  <Select
+                    className={styles.control}
+                    value={form.sectorProfile}
+                    onChange={(event) =>
+                      setForm({ ...form, sectorProfile: event.target.value })
+                    }
+                  >
+                    {sectorProfiles.map((profile) => (
+                      <option key={profile.value} value={profile.value}>
+                        {profile.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                {error && (
+                  <MessageBar className={styles.error} intent="error">
+                    <MessageBarBody>{error}</MessageBarBody>
+                  </MessageBar>
+                )}
+              </DialogContent>
+              <DialogActions>
+                <FluentButton
+                  type="button"
+                  onClick={onClose}
+                  disabled={busy}
+                >
+                  Cancel
+                </FluentButton>
+                <FluentButton
+                  appearance="primary"
+                  type="submit"
+                  disabled={busy}
+                >
+                  {busy ? "Creating…" : "Create engagement"}
+                </FluentButton>
+              </DialogActions>
+            </DialogBody>
           </form>
         )}
-      </section>
-    </div>
+      </DialogSurface>
+    </Dialog>
   );
 }
 

@@ -21,8 +21,15 @@ vi.mock("@fluentui/react-components", () => {
     BreadcrumbDivider: Component,
     BreadcrumbItem: Component,
     Button: Component,
+    Dialog: Component,
+    DialogActions: Component,
+    DialogBody: Component,
+    DialogContent: Component,
+    DialogSurface: Component,
+    DialogTitle: Component,
     Field: Component,
     Input: Component,
+    makeStyles: () => () => ({}),
     MessageBar: Component,
     MessageBarActions: Component,
     MessageBarBody: Component,
@@ -48,6 +55,7 @@ vi.mock("@fluentui/react-components", () => {
     Tree: Component,
     TreeItem: Component,
     TreeItemLayout: Component,
+    tokens: new Proxy({}, { get: () => "4px" }),
   };
 });
 vi.mock("@fluentui/react-icons", () => ({
