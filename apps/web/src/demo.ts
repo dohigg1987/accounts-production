@@ -888,6 +888,7 @@ const reads: Array<[RegExp, unknown]> = [
         {
           event_id: "audit-1",
           occurred_at_utc: now,
+          recorded_at_utc: now,
           actor_id: "demo-user",
           event_type: "ACCOUNTS_VERSION_FINALISED",
           object_type: "ACCOUNTS_VERSION",

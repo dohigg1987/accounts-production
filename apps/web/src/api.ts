@@ -615,6 +615,7 @@ export type FilingAttempt = {
 export type AuditEvent = {
   event_id: string;
   occurred_at_utc: string;
+  recorded_at_utc: string;
   actor_id: string;
   event_type: string;
   object_type: string;
