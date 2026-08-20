@@ -34,6 +34,12 @@ const statusTones = {
   FAILED: "negative",
   REJECTED: "negative",
   REVOKED: "negative",
+  VOIDED: "negative",
+  WITHDRAWN: "negative",
+  INVALIDATED: "negative",
+  BLOCKED: "negative",
+  EXPIRED: "negative",
+  PROHIBITED: "negative",
   BLOCKING: "caution",
   EXCEPTION: "caution",
   OVERDUE: "caution",
@@ -42,15 +48,21 @@ const statusTones = {
   RESTRICTED: "caution",
   SUSPENDED: "caution",
   WARNING: "caution",
+  REOPENED: "caution",
   DISABLED: "neutral",
   DRAFT: "neutral",
   IN_PROGRESS: "neutral",
+  NOT_APPLICABLE: "neutral",
+  NOT_STARTED: "neutral",
   NOT_CONFIGURED: "informative",
   OPEN: "neutral",
   PENDING: "neutral",
   PREPARATION: "neutral",
+  PREPARED: "informative",
   PROCESSING: "neutral",
   REQUESTED: "neutral",
+  RESPONDED: "informative",
+  SUPERSEDED: "neutral",
   UNREAD: "neutral",
 } as const satisfies Record<string, StatusBadgeTone>;
 
@@ -72,6 +84,6 @@ export function statusBadgeProps(status: MappedStatus | string): StatusBadgeProp
   const key = normaliseStatus(status);
   const tone = Object.prototype.hasOwnProperty.call(statusTones, key)
     ? statusTones[key as MappedStatus]
-    : "informative";
+    : "caution";
   return toneProps[tone];
 }

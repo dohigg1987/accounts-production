@@ -12,10 +12,30 @@ describe("statusBadgeProps", () => {
     expect(statusBadgeProps(status)).toEqual(expected);
   });
 
-  it("uses an informative treatment for an unknown non-error status", () => {
+  it("uses a caution treatment for an unmapped status", () => {
     expect(statusBadgeProps("AWAITING_EXTERNAL_REVIEW")).toEqual({
       appearance: "tint",
-      color: "informative",
+      color: "warning",
+    });
+  });
+
+  it.each([
+    ["VOIDED", "danger"],
+    ["WITHDRAWN", "danger"],
+    ["SUPERSEDED", "subtle"],
+    ["INVALIDATED", "danger"],
+    ["BLOCKED", "danger"],
+    ["REOPENED", "warning"],
+    ["NOT_STARTED", "subtle"],
+    ["PREPARED", "informative"],
+    ["RESPONDED", "informative"],
+    ["EXPIRED", "danger"],
+    ["PROHIBITED", "danger"],
+    ["NOT_APPLICABLE", "subtle"],
+  ] as const)("does not render the real %s state as an unknown benign badge", (status, color) => {
+    expect(statusBadgeProps(status)).toEqual({
+      appearance: color === "subtle" ? "outline" : "tint",
+      color,
     });
   });
 
