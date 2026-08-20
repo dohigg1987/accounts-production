@@ -59,6 +59,7 @@ test("pointer drag assigns an unmapped source through the existing save flow", a
   await seedUnmappedAccount(page);
   const source = page.getByRole("button", { name: /1000.*Current account/ });
   const target = page.getByRole("button", { name: /Map to BS.CASH/ });
+  await expect(target).toBeVisible();
 
   await source.dragTo(target);
 

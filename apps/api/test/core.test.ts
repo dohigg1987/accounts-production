@@ -6,6 +6,8 @@ import {
   ApiError,
   decodeTrialBalanceCsv,
   inspectTrialBalanceCsv,
+  canonicalModelEntryCommand,
+  canonicalModelNormalBalance,
   parseTrialBalanceCsv,
   regulatorEvidenceContentType,
   regulatorEvidenceFilename,
@@ -20,6 +22,29 @@ import {
   workspaceName,
   workspaceOnboardingDatabaseError,
 } from "../src/core.ts";
+
+test("validates governed canonical-model presentation changes", () => {
+  assert.deepEqual(
+    canonicalModelEntryCommand({
+      displayName: "  Community projects  ",
+      presentationGroup: " Restricted funds ",
+      displayOrder: 25,
+      isActive: true,
+    }),
+    {
+      displayName: "Community projects",
+      presentationGroup: "Restricted funds",
+      displayOrder: 25,
+      isActive: true,
+    },
+  );
+  assert.equal(canonicalModelNormalBalance("CREDIT"), "CREDIT");
+  assert.throws(
+    () => canonicalModelEntryCommand({ displayName: "Cash", displayOrder: -1 }),
+    /displayOrder/,
+  );
+  assert.throws(() => canonicalModelNormalBalance("BOTH"), /DEBIT or CREDIT/);
+});
 
 test("does not report an empty trial balance as balanced or fully mapped", () => {
   assert.deepEqual(trialBalanceReadiness(0, 0, "0", "0"), {

@@ -770,6 +770,40 @@ tfoot td {
   color: var(--colorNeutralForeground3);
   line-height: var(--lineHeightBase200);
 }
+.canonical-model-dialog {
+  width: min(1080px, calc(100vw - 32px));
+  max-width: 1080px;
+}
+.canonical-model-dialog [role="dialog"] {
+  min-width: 0;
+}
+.canonical-model-content {
+  display: grid;
+  gap: 12px;
+}
+.canonical-model-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px;
+  background: var(--colorNeutralBackground2);
+  border: 1px solid var(--colorNeutralStroke2);
+}
+.canonical-model-form-actions {
+  display: flex;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.canonical-model-table {
+  max-height: min(54vh, 560px);
+  overflow: auto;
+}
+@media (max-width: 680px) {
+  .canonical-model-form {
+    grid-template-columns: 1fr;
+  }
+}
 .report {
   max-width: 960px;
 }

@@ -45,6 +45,73 @@ export class ApiError extends Error {
   }
 }
 
+export interface CanonicalModelEntryCommand {
+  displayName: string;
+  presentationGroup: string | null;
+  displayOrder: number;
+  isActive: boolean;
+}
+
+function modelText(value: unknown, field: string, maxLength: number): string {
+  if (typeof value !== "string" || !value.trim())
+    throw new ApiError(400, "INVALID_CANONICAL_MODEL", `${field} is required`);
+  const clean = value.trim();
+  if (clean.length > maxLength || /[\u0000-\u001f\u007f]/.test(clean))
+    throw new ApiError(
+      400,
+      "INVALID_CANONICAL_MODEL",
+      `${field} must be at most ${maxLength} characters`,
+    );
+  return clean;
+}
+
+export function canonicalModelEntryCommand(
+  body: Record<string, unknown>,
+  current?: CanonicalModelEntryCommand,
+): CanonicalModelEntryCommand {
+  const displayName =
+    body.displayName === undefined && current
+      ? current.displayName
+      : modelText(body.displayName, "displayName", 120);
+  const rawGroup = body.presentationGroup;
+  let presentationGroup = current?.presentationGroup ?? null;
+  if (rawGroup !== undefined)
+    presentationGroup =
+      rawGroup === null || rawGroup === ""
+        ? null
+        : modelText(rawGroup, "presentationGroup", 80);
+  const rawOrder = body.displayOrder ?? current?.displayOrder ?? 0;
+  if (!Number.isInteger(rawOrder) || Number(rawOrder) < 0 || Number(rawOrder) > 99999)
+    throw new ApiError(
+      400,
+      "INVALID_CANONICAL_MODEL",
+      "displayOrder must be an integer from 0 to 99999",
+    );
+  const rawActive = body.isActive ?? current?.isActive ?? true;
+  if (typeof rawActive !== "boolean")
+    throw new ApiError(
+      400,
+      "INVALID_CANONICAL_MODEL",
+      "isActive must be a boolean",
+    );
+  return {
+    displayName,
+    presentationGroup,
+    displayOrder: Number(rawOrder),
+    isActive: rawActive,
+  };
+}
+
+export function canonicalModelNormalBalance(value: unknown): "DEBIT" | "CREDIT" {
+  if (value !== "DEBIT" && value !== "CREDIT")
+    throw new ApiError(
+      400,
+      "INVALID_CANONICAL_MODEL",
+      "normalBalance must be DEBIT or CREDIT",
+    );
+  return value;
+}
+
 export function trialBalanceReadiness(
   accountCount: number,
   unmappedCount: number,

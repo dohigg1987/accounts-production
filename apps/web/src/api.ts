@@ -49,6 +49,27 @@ export type CanonicalAccount = {
   name: string;
   report_line: string;
   normal_balance: string;
+  standard_name?: string;
+  report_line_id?: string;
+  presentation_group?: string | null;
+  display_order?: number;
+  is_active?: boolean;
+  is_protected?: boolean;
+  is_custom?: boolean;
+  model_version?: number;
+};
+export type CanonicalReportLine = {
+  id: string;
+  taxonomy_version: string;
+  line_code: string;
+  caption: string;
+  statement_code: string;
+  display_order: number;
+};
+export type CanonicalModel = {
+  items: CanonicalAccount[];
+  reportLines: CanonicalReportLine[];
+  canManage: boolean;
 };
 export type TenantMembership = {
   tenant_id: string;
@@ -1026,10 +1047,36 @@ export const api = {
     }),
   engagements: (context: ApiContext) =>
     request<{ items: Engagement[] }>("/v1/engagements", context),
-  canonicalAccounts: (context: ApiContext) =>
+  canonicalAccounts: (context: ApiContext, engagementId?: string) =>
     request<{ items: CanonicalAccount[] }>(
-      "/v1/canonical-accounts?taxonomyVersion=UK-CANONICAL-2026",
+      `/v1/canonical-accounts?taxonomyVersion=UK-CANONICAL-2026${engagementId ? `&engagementId=${encodeURIComponent(engagementId)}` : ""}`,
       context,
+    ),
+  canonicalModel: (context: ApiContext, engagementId: string) =>
+    request<CanonicalModel>(
+      `/v1/engagements/${encodeURIComponent(engagementId)}/canonical-model`,context,
+    ),
+  createCanonicalModelAccount: (
+    context: ApiContext,engagementId: string,body: {
+      displayName: string; reportLineId: string; normalBalance: "DEBIT" | "CREDIT";
+      presentationGroup: string | null; displayOrder: number; isActive: true;
+    },
+  ) => request<{item:CanonicalAccount}>(
+    `/v1/engagements/${encodeURIComponent(engagementId)}/canonical-model/accounts`,context,
+    {method:"POST",body:JSON.stringify(body)},
+  ),
+  updateCanonicalModelAccount: (
+    context:ApiContext,engagementId:string,accountId:string,body:{
+      displayName:string; presentationGroup:string|null; displayOrder:number; isActive:boolean;
+    },
+  ) => request<{item:CanonicalAccount}>(
+    `/v1/engagements/${encodeURIComponent(engagementId)}/canonical-model/accounts/${encodeURIComponent(accountId)}`,
+    context,{method:"PATCH",body:JSON.stringify(body)},
+  ),
+  resetCanonicalModel: (context:ApiContext,engagementId:string) =>
+    request<{items:CanonicalAccount[]}>(
+      `/v1/engagements/${encodeURIComponent(engagementId)}/canonical-model/reset`,context,
+      {method:"POST",body:JSON.stringify({})},
     ),
   trialBalance: (context: ApiContext, id: string) =>
     request<{ items: TrialBalanceLine[] }>(

@@ -89,6 +89,7 @@ import {
   AccountsVersion,
   AuditEvent,
   CanonicalAccount,
+  CanonicalModel,
   Dashboard,
   Disclosure,
   Engagement,
@@ -594,15 +595,6 @@ function AccountsWorkspace({
     setLoading(true);
     setError("");
     setTaxonomyError("");
-    api
-      .canonicalAccounts(context)
-      .then((data) => setCanonicalAccounts(data.items))
-      .catch((e) => {
-        setCanonicalAccounts([]);
-        setTaxonomyError(
-          e instanceof Error ? e.message : "Could not load canonical accounts.",
-        );
-      });
     try {
       const data = await api.engagements(context);
       setEngagements(data.items);
@@ -632,7 +624,7 @@ function AccountsWorkspace({
       setOrganisationLoading(false);
     }
   }, [configured, context]);
-  const loadDetail = useCallback(async () => {
+  const loadDetail = useCallback(async (refreshCanonical = true) => {
     if (!selectedId) {
       setLines([]);
       setEvents([]);
@@ -649,11 +641,14 @@ function AccountsWorkspace({
     setDetailError("");
     setReportError("");
     setHistoryError("");
-    const [tb, history, reportData, versionData] = await Promise.allSettled([
+    const [tb, history, reportData, versionData, canonicalData] = await Promise.allSettled([
       api.trialBalance(context, selectedId),
       api.history(context, selectedId),
       api.report(context, selectedId),
       api.accountsVersions(context, selectedId),
+      refreshCanonical
+        ? api.canonicalAccounts(context, selectedId)
+        : Promise.resolve(null),
     ]);
     if (detailSelectionRef.current !== requestEngagementId) return;
     if (tb.status === "fulfilled") setLines(tb.value.items);
@@ -688,6 +683,19 @@ function AccountsWorkspace({
     if (versionData.status === "fulfilled")
       setAccountsVersions(versionData.value.items);
     else setAccountsVersions([]);
+    if (
+      refreshCanonical &&
+      canonicalData.status === "fulfilled" &&
+      canonicalData.value
+    ) {
+      setCanonicalAccounts(canonicalData.value.items);
+      setTaxonomyError("");
+    } else if (refreshCanonical && canonicalData.status === "rejected") {
+      setCanonicalAccounts([]);
+      setTaxonomyError(
+        canonicalData.reason?.message || "Could not load canonical accounts.",
+      );
+    }
     setDetailLoading(false);
   }, [context, selectedId]);
   const loadOperations = useCallback(async () => {
@@ -784,7 +792,7 @@ function AccountsWorkspace({
     () =>
       canonicalAccounts.map((account) => [
         account.id,
-        `${account.canonical_code} · ${account.name}`,
+        `${canonicalDisplayCode(account.canonical_code)} · ${account.name}`,
       ]),
     [canonicalAccounts],
   );
@@ -871,7 +879,7 @@ function AccountsWorkspace({
         good: true,
         text: `${line.account_code} · ${line.account_name} was mapped.`,
       });
-      await loadDetail();
+      await loadDetail(false);
     } catch (e) {
       setNotice({
         good: false,
@@ -1808,7 +1816,7 @@ function AccountsWorkspace({
                     <b>Couldn’t load engagement data</b>
                     <p>{detailError}</p>
                   </div>
-                  <FluentButton onClick={loadDetail}>
+                  <FluentButton onClick={() => void loadDetail()}>
                     Retry
                   </FluentButton>
                 </div>
@@ -1833,7 +1841,10 @@ function AccountsWorkspace({
                   saving={saving}
                   onSave={saveMapping}
                   taxonomyError={taxonomyError}
-                  onRetryTaxonomy={loadEngagements}
+                  onRetryTaxonomy={loadDetail}
+                  context={context}
+                  engagementId={selectedId}
+                  onModelChanged={loadDetail}
                 />
               ) : view === "accounts" ? (
                 <AccountsView
@@ -3435,7 +3446,7 @@ function JournalsView({
                         <option value="">Select account…</option>
                         {canonicalAccounts.map((account) => (
                           <option key={account.id} value={account.id}>
-                            {account.canonical_code} · {account.name}
+                            {canonicalDisplayCode(account.canonical_code)} · {account.name}
                           </option>
                         ))}
                       </Select>
@@ -4829,6 +4840,9 @@ function PanelHead({
     </div>
   );
 }
+function canonicalDisplayCode(code:string|null|undefined):string{
+  return code?.startsWith("CUSTOM.")?"Custom account":code||"";
+}
 function MappingView({
   lines,
   canonicalAccounts,
@@ -4841,6 +4855,9 @@ function MappingView({
   onSave,
   taxonomyError,
   onRetryTaxonomy,
+  context,
+  engagementId,
+  onModelChanged,
 }: {
   lines: TrialBalanceLine[];
   canonicalAccounts: CanonicalAccount[];
@@ -4853,11 +4870,15 @@ function MappingView({
   onSave: (line: TrialBalanceLine, code: string) => void;
   taxonomyError: string;
   onRetryTaxonomy: () => void;
+  context: ApiContext;
+  engagementId: string;
+  onModelChanged: () => void;
 }) {
   const [selectedSourceId, setSelectedSourceId] = useState("");
   const [sourceQuery, setSourceQuery] = useState("");
   const [canonicalQuery, setCanonicalQuery] = useState("");
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
+  const [modelManagerOpen, setModelManagerOpen] = useState(false);
   const unmappedLines = lines.filter((line) => !line.canonical_account_id);
   const selectedLine = lines.find(
     (line) => line.source_account_id === selectedSourceId,
@@ -4990,6 +5011,14 @@ function MappingView({
           body="Connect each source account to the reporting taxonomy."
         >
           <div className="mapping-view-actions">
+            <FluentButton
+              appearance="secondary"
+              size="small"
+              onClick={()=>setModelManagerOpen(true)}
+              disabled={Boolean(taxonomyError)}
+            >
+              Manage model
+            </FluentButton>
             <TabList
               size="small"
               selectedValue={mode}
@@ -5066,7 +5095,7 @@ function MappingView({
                             ([id]) => id === line.canonical_account_id,
                           ) && (
                             <option value={line.canonical_account_id}>
-                              {line.canonical_code} · {line.canonical_name}
+                              {canonicalDisplayCode(line.canonical_code)} · {line.canonical_name}
                             </option>
                           )}
                         {options.map(([id, name]) => (
@@ -5345,8 +5374,157 @@ function MappingView({
           </div>
         )}
       </section>
+      {modelManagerOpen && (
+        <CanonicalModelManager
+          open
+          context={context}
+          engagementId={engagementId}
+          onClose={() => setModelManagerOpen(false)}
+          onChanged={onModelChanged}
+        />
+      )}
     </div>
   );
+}
+
+type CanonicalModelForm={
+  displayName:string;
+  presentationGroup:string;
+  displayOrder:string;
+  isActive:boolean;
+  reportLineId:string;
+  normalBalance:"DEBIT"|"CREDIT";
+};
+const emptyCanonicalModelForm:CanonicalModelForm={
+  displayName:"",presentationGroup:"",displayOrder:"0",isActive:true,
+  reportLineId:"",normalBalance:"DEBIT",
+};
+
+function CanonicalModelManager({open,context,engagementId,onClose,onChanged}:{
+  open:boolean;context:ApiContext;engagementId:string;onClose:()=>void;onChanged:()=>void;
+}){
+  const [model,setModel]=useState<CanonicalModel|null>(null);
+  const [error,setError]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [editing,setEditing]=useState<CanonicalAccount|null>(null);
+  const [creating,setCreating]=useState(false);
+  const [form,setForm]=useState<CanonicalModelForm>(emptyCanonicalModelForm);
+  const load=useCallback(async()=>{
+    if(!engagementId)return;
+    setError("");
+    try{setModel(await api.canonicalModel(context,engagementId));}
+    catch(e){setError(e instanceof Error?e.message:"Could not load the account model.");}
+  },[context,engagementId]);
+  useEffect(()=>{if(open)void load();},[open,load]);
+  function edit(item:CanonicalAccount){
+    setCreating(false);setEditing(item);
+    setForm({
+      displayName:item.name,presentationGroup:item.presentation_group||"",
+      displayOrder:String(item.display_order??0),isActive:item.is_active!==false,
+      reportLineId:item.report_line_id||"",normalBalance:item.normal_balance as "DEBIT"|"CREDIT",
+    });
+  }
+  function add(){
+    setEditing(null);setCreating(true);
+    setForm({...emptyCanonicalModelForm,reportLineId:model?.reportLines[0]?.id||""});
+  }
+  async function save(event:React.FormEvent){
+    event.preventDefault();if(!form.displayName.trim())return;
+    setBusy(true);setError("");
+    try{
+      if(creating){
+        await api.createCanonicalModelAccount(context,engagementId,{
+          displayName:form.displayName,presentationGroup:form.presentationGroup||null,
+          displayOrder:Number(form.displayOrder),isActive:true,reportLineId:form.reportLineId,
+          normalBalance:form.normalBalance,
+        });
+      }else if(editing){
+        await api.updateCanonicalModelAccount(context,engagementId,editing.id,{
+          displayName:form.displayName,presentationGroup:form.presentationGroup||null,
+          displayOrder:Number(form.displayOrder),isActive:form.isActive,
+        });
+      }
+      setCreating(false);setEditing(null);await load();onChanged();
+    }catch(e){setError(e instanceof Error?e.message:"Could not save the model change.");}
+    finally{setBusy(false);}
+  }
+  async function reset(){
+    setBusy(true);setError("");
+    try{await api.resetCanonicalModel(context,engagementId);setCreating(false);setEditing(null);await load();onChanged();}
+    catch(e){setError(e instanceof Error?e.message:"Could not reset the model.");throw e;}
+    finally{setBusy(false);}
+  }
+  return <Dialog open={open} onOpenChange={(_,data)=>!data.open&&!busy&&onClose()}>
+    <DialogSurface className="canonical-model-dialog">
+      <DialogBody>
+        <DialogTitle>Manage account model</DialogTitle>
+        <DialogContent className="canonical-model-content">
+          <Text block>Adapt presentation without changing protected statutory codes or report-line links.</Text>
+          {error&&<MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
+          <Toolbar aria-label="Account model commands">
+            <FluentButton appearance="primary" size="small" onClick={add} disabled={busy||!model?.canManage}>Add account</FluentButton>
+            <ConfirmAction
+              label="Reset to standard"
+              title="Reset account model?"
+              body="Presentation overrides will return to the standard taxonomy and custom accounts will be deactivated. Existing audit history is retained."
+              confirmLabel="Reset model"
+              onConfirm={reset}
+              disabled={busy||!model?.canManage}
+            />
+          </Toolbar>
+          {(creating||editing)&&<form id="canonical-model-form" className="canonical-model-form" onSubmit={save}>
+            <Field label="Display name" required>
+              <Input autoFocus required value={form.displayName} onChange={(_,data)=>setForm(value=>({...value,displayName:data.value}))}/>
+            </Field>
+            {creating&&<>
+              <Field label="Statutory report line" required>
+                <Select required value={form.reportLineId} onChange={event=>setForm(value=>({...value,reportLineId:event.target.value}))}>
+                  {model?.reportLines.map(line=><option key={line.id} value={line.id}>{line.caption}</option>)}
+                </Select>
+              </Field>
+              <Field label="Normal balance" required>
+                <Select value={form.normalBalance} onChange={event=>setForm(value=>({...value,normalBalance:event.target.value as "DEBIT"|"CREDIT"}))}>
+                  <option value="DEBIT">Debit</option><option value="CREDIT">Credit</option>
+                </Select>
+              </Field>
+            </>}
+            <Field label="Presentation group">
+              <Input value={form.presentationGroup} onChange={(_,data)=>setForm(value=>({...value,presentationGroup:data.value}))}/>
+            </Field>
+            <Field label="Display order" required>
+              <Input type="number" min="0" max="99999" required value={form.displayOrder} onChange={(_,data)=>setForm(value=>({...value,displayOrder:data.value}))}/>
+            </Field>
+            {!creating&&<Checkbox
+              label="Active in this engagement"
+              checked={form.isActive}
+              disabled={Boolean(editing?.is_protected)}
+              onChange={(_,data)=>setForm(value=>({...value,isActive:Boolean(data.checked)}))}
+            />}
+            <div className="canonical-model-form-actions">
+              <FluentButton appearance="secondary" type="button" disabled={busy} onClick={()=>{setCreating(false);setEditing(null);}}>Cancel</FluentButton>
+              <FluentButton appearance="primary" type="submit" disabled={busy||!form.displayName.trim()||!form.displayOrder}>Save change</FluentButton>
+            </div>
+          </form>}
+          <div className="table-wrap canonical-model-table">
+            <Table size="small" aria-label="Canonical account model">
+              <TableHeader><TableRow>
+                <TableHeaderCell>Account</TableHeaderCell><TableHeaderCell>Report line</TableHeaderCell>
+                <TableHeaderCell>Group / order</TableHeaderCell><TableHeaderCell>Status</TableHeaderCell><TableHeaderCell>Actions</TableHeaderCell>
+              </TableRow></TableHeader>
+              <TableBody>{model?.items.map(item=><TableRow key={item.id}>
+                <TableCell><b className="block">{item.name}</b><small className="mono">{canonicalDisplayCode(item.canonical_code)}</small></TableCell>
+                <TableCell>{statutoryLabel(item.report_line)}</TableCell>
+                <TableCell>{item.presentation_group||"Standard"} · {item.display_order??0}</TableCell>
+                <TableCell><Badge appearance="outline" color={item.is_active===false?"subtle":item.is_custom?"success":"brand"}>{item.is_active===false?"Inactive":item.is_custom?"Custom":"Protected"}</Badge></TableCell>
+                <TableCell><FluentButton appearance="subtle" size="small" disabled={busy||!model.canManage} onClick={()=>edit(item)}>Edit</FluentButton></TableCell>
+              </TableRow>)}</TableBody>
+            </Table>
+          </div>
+        </DialogContent>
+        <DialogActions><FluentButton appearance="secondary" disabled={busy} onClick={onClose}>Close</FluentButton></DialogActions>
+      </DialogBody>
+    </DialogSurface>
+  </Dialog>;
 }
 
 const statementLabels: Record<string, string> = {
