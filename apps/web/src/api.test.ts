@@ -69,6 +69,27 @@ describe("authenticated API boundary", () => {
     expect(call(0).headers["x-tenant-id"]).toBe("tenant-1");
   });
 
+  it("uses engagement-scoped governed canonical-model routes", async () => {
+    const context={tenantId:"tenant-1"};
+    await api.canonicalModel(context,"engagement/1");
+    await api.createCanonicalModelAccount(context,"engagement/1",{
+      displayName:"Community projects",reportLineId:"line/1",normalBalance:"DEBIT",
+      presentationGroup:"Restricted funds",displayOrder:20,isActive:true,
+    });
+    await api.updateCanonicalModelAccount(context,"engagement/1","account/1",{
+      displayName:"Community programmes",presentationGroup:null,displayOrder:25,isActive:true,
+    });
+    await api.resetCanonicalModel(context,"engagement/1");
+    expect(call(0).url).toBe("/v1/engagements/engagement%2F1/canonical-model");
+    expect(call(1)).toMatchObject({
+      url:"/v1/engagements/engagement%2F1/canonical-model/accounts",
+      body:{displayName:"Community projects",reportLineId:"line/1"},
+    });
+    expect(call(1).init.method).toBe("POST");
+    expect(call(2).init.method).toBe("PATCH");
+    expect(call(3).url).toBe("/v1/engagements/engagement%2F1/canonical-model/reset");
+  });
+
   it("generates and retrieves HTML and PDF only through authenticated proxy routes", async () => {
     const context = { tenantId: "tenant-1" };
     await api.generateAccountsHtml(context, "engagement/1", "version/1");

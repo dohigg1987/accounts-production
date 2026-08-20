@@ -43,6 +43,8 @@ import {
 import {
   ApiError,
   decodeTrialBalanceCsv,
+  canonicalModelEntryCommand,
+  canonicalModelNormalBalance,
   parseTrialBalanceCsv,
   regulatorEvidenceContentType,
   regulatorEvidenceFilename,
@@ -1397,8 +1399,17 @@ async function mapAccount(
         await tx`select id from source_account where id=${sourceAccountId} and tenant_id=${ctx.tenantId} and organisation_id=${engagement.organisationId}`;
       if (!sources.length)
         throw new ApiError(404, "NOT_FOUND", "Source account not found");
-      const canonical =
-        await tx`select id,canonical_code,name,report_line from canonical_account where id=${canonicalAccountId}`;
+      const canonical = await tx`select ca.id,ca.canonical_code,
+          coalesce(model.display_name,ca.name) as name,ca.report_line
+        from canonical_account ca
+        left join lateral(
+          select o.display_name,o.is_active from engagement_canonical_model_override o
+          where o.tenant_id=${ctx.tenantId} and o.engagement_id=${engagementId}
+            and o.canonical_account_id=ca.id order by o.version desc limit 1
+        ) model on true
+        where ca.id=${canonicalAccountId}
+          and (ca.tenant_id is null or (ca.tenant_id=${ctx.tenantId} and ca.engagement_id=${engagementId}))
+          and coalesce(model.is_active,true)`;
       if (!canonical.length)
         throw new ApiError(404, "NOT_FOUND", "Canonical account not found");
       const finalRows =
@@ -1497,8 +1508,15 @@ async function createJournal(
       const canonicalIds = [
         ...new Set(parsed.lines.map((line) => line.canonicalAccountId)),
       ];
-      const valid =
-        await tx`select id from canonical_account where id in ${tx(canonicalIds)}`;
+      const valid = await tx`select ca.id from canonical_account ca
+        left join lateral(
+          select o.is_active from engagement_canonical_model_override o
+          where o.tenant_id=${ctx.tenantId} and o.engagement_id=${engagementId}
+            and o.canonical_account_id=ca.id order by o.version desc limit 1
+        ) model on true
+        where ca.id in ${tx(canonicalIds)}
+          and (ca.tenant_id is null or (ca.tenant_id=${ctx.tenantId} and ca.engagement_id=${engagementId}))
+          and coalesce(model.is_active,true)`;
       if (valid.length !== canonicalIds.length)
         throw new ApiError(
           400,
@@ -5501,6 +5519,194 @@ async function auditHistory(
     await sql.end();
   }
 }
+
+async function canonicalModelItems(
+  tx: Transaction,
+  ctx: RequestContext,
+  engagementId: string,
+  includeInactive = true,
+) {
+  return tx`select ca.id,ca.taxonomy_version,ca.canonical_code,
+      coalesce(model.display_name,ca.name) as name,
+      ca.name as standard_name,ca.report_line,ca.report_line_id,ca.normal_balance,
+      ca.is_protected,(ca.tenant_id is not null) as is_custom,
+      coalesce(model.presentation_group,rl.statement_code) as presentation_group,
+      coalesce(model.display_order,rl.display_order) as display_order,
+      coalesce(model.is_active,true) as is_active,
+      coalesce(model.version,0)::int as model_version
+    from canonical_account ca
+    join canonical_report_line rl on rl.id=ca.report_line_id
+    left join lateral(
+      select o.display_name,o.presentation_group,o.display_order,o.is_active,o.version
+      from engagement_canonical_model_override o
+      where o.tenant_id=${ctx.tenantId} and o.engagement_id=${engagementId}
+        and o.canonical_account_id=ca.id
+      order by o.version desc limit 1
+    ) model on true
+    where ca.taxonomy_version='UK-CANONICAL-2026'
+      and (ca.tenant_id is null or (ca.tenant_id=${ctx.tenantId} and ca.engagement_id=${engagementId}))
+      and (${includeInactive} or coalesce(model.is_active,true))
+    order by coalesce(model.presentation_group,rl.statement_code),
+      coalesce(model.display_order,rl.display_order),ca.canonical_code`;
+}
+
+async function canonicalModel(
+  request: Request,
+  env: Env,
+  actorId: string,
+  engagementId: string,
+): Promise<Response> {
+  const ctx = context(request, actorId), sql = db(env);
+  try {
+    return await withTenantTransaction(sql, ctx, async (tx) => {
+      const engagement = await engagementAccess(tx, ctx, engagementId);
+      const items = await canonicalModelItems(tx, ctx, engagementId);
+      const reportLines = await tx`select rl.id,rl.taxonomy_version,rl.line_code,rl.caption,
+          rl.statement_code,rl.display_order
+        from canonical_report_line rl
+        where rl.taxonomy_version='UK-CANONICAL-2026'
+          and exists(select 1 from canonical_account ca where ca.report_line_id=rl.id and ca.tenant_id is null)
+        order by rl.statement_code,rl.display_order,rl.line_code`;
+      return json({
+        items,
+        reportLines,
+        canManage: ["OWNER","ADMIN","PARTNER","MANAGER","PREPARER"].includes(engagement.role),
+      });
+    });
+  } finally { await sql.end(); }
+}
+
+async function createCanonicalModelAccount(
+  request: Request,
+  env: Env,
+  actorId: string,
+  engagementId: string,
+): Promise<Response> {
+  const ctx = context(request, actorId), body = await jsonBody(request), sql = db(env);
+  const command = canonicalModelEntryCommand(body);
+  if (!command.isActive)
+    throw new ApiError(400,"INVALID_CANONICAL_MODEL","A new account must be active");
+  const normalBalance = canonicalModelNormalBalance(body.normalBalance);
+  const reportLineId = boundedRequiredString(body,"reportLineId",80);
+  try {
+    const item = await withTenantTransaction(sql, ctx, async (tx) => {
+      const engagement = await engagementAccess(tx,ctx,engagementId,WRITE_ROLES);
+      await tx`select id from engagement where id=${engagementId} and tenant_id=${ctx.tenantId} for update`;
+      const reportLines = await tx`select id,line_code from canonical_report_line rl
+        where rl.id=${reportLineId} and rl.taxonomy_version='UK-CANONICAL-2026'
+          and exists(select 1 from canonical_account ca where ca.report_line_id=rl.id and ca.tenant_id is null)`;
+      if (!reportLines.length)
+        throw new ApiError(400,"IMPERMISSIBLE_REPORT_LINE","Select a permitted statutory report line");
+      const accountId=crypto.randomUUID();
+      const canonicalCode=`CUSTOM.${accountId.replaceAll("-","").toUpperCase()}`;
+      await tx`insert into canonical_account(id,taxonomy_version,canonical_code,name,report_line,
+          normal_balance,report_line_id,tenant_id,engagement_id,is_protected,created_by)
+        values(${accountId},'UK-CANONICAL-2026',${canonicalCode},${command.displayName},
+          ${String(reportLines[0]!.line_code)},${normalBalance},${reportLineId},${ctx.tenantId},
+          ${engagementId},false,${ctx.actorId})`;
+      await tx`insert into engagement_canonical_model_override(id,tenant_id,engagement_id,
+          canonical_account_id,version,display_name,presentation_group,display_order,is_active,
+          change_reason,created_by)
+        values(${crypto.randomUUID()},${ctx.tenantId},${engagementId},${accountId},1,
+          ${command.displayName},${command.presentationGroup},${command.displayOrder},true,
+          'Custom account added',${ctx.actorId})`;
+      await appendEvents(tx,ctx,engagement,"CANONICAL_MODEL_ACCOUNT_ADDED","CANONICAL_ACCOUNT",accountId,
+        { canonicalCode,reportLineId,normalBalance,displayName:command.displayName });
+      return (await canonicalModelItems(tx,ctx,engagementId)).find(row=>String(row.id)===accountId)!;
+    });
+    return json({item},201);
+  } finally { await sql.end(); }
+}
+
+async function updateCanonicalModelAccount(
+  request: Request,
+  env: Env,
+  actorId: string,
+  engagementId: string,
+  accountId: string,
+): Promise<Response> {
+  const ctx=context(request,actorId),body=await jsonBody(request),sql=db(env);
+  const changeReason=typeof body.changeReason==='string'&&body.changeReason.trim()
+    ?boundedRequiredString(body,"changeReason",240):'Model presentation updated';
+  try {
+    const item=await withTenantTransaction(sql,ctx,async(tx)=>{
+      const engagement=await engagementAccess(tx,ctx,engagementId,WRITE_ROLES);
+      await tx`select id from engagement where id=${engagementId} and tenant_id=${ctx.tenantId} for update`;
+      const current=(await canonicalModelItems(tx,ctx,engagementId)).find(row=>String(row.id)===accountId);
+      if(!current)throw new ApiError(404,"NOT_FOUND","Canonical account not found");
+      const command=canonicalModelEntryCommand(body,{
+        displayName:String(current.name),presentationGroup:current.presentation_group?String(current.presentation_group):null,
+        displayOrder:Number(current.display_order),isActive:Boolean(current.is_active),
+      });
+      if(Boolean(current.is_protected)&&!command.isActive)
+        throw new ApiError(409,"PROTECTED_CANONICAL_ACCOUNT","Protected statutory accounts cannot be deactivated");
+      if(!command.isActive){
+        const uses=await tx`select 1 from trial_balance_line tbl
+            join trial_balance tb on tb.id=tbl.trial_balance_id and tb.tenant_id=tbl.tenant_id
+            where tb.tenant_id=${ctx.tenantId} and tb.engagement_id=${engagementId}
+              and tbl.canonical_account_id=${accountId}
+          union all
+          select 1 from journal_line jl join journal j on j.id=jl.journal_id and j.tenant_id=jl.tenant_id
+            where j.tenant_id=${ctx.tenantId} and j.engagement_id=${engagementId}
+              and jl.canonical_account_id=${accountId} limit 1`;
+        if(uses.length)throw new ApiError(409,"CANONICAL_ACCOUNT_IN_USE","Remap or remove references before deactivating this account");
+      }
+      const version=Number(current.model_version)+1;
+      await tx`insert into engagement_canonical_model_override(id,tenant_id,engagement_id,
+          canonical_account_id,version,display_name,presentation_group,display_order,is_active,
+          change_reason,created_by)
+        values(${crypto.randomUUID()},${ctx.tenantId},${engagementId},${accountId},${version},
+          ${command.displayName},${command.presentationGroup},${command.displayOrder},${command.isActive},
+          ${changeReason},${ctx.actorId})`;
+      await appendEvents(tx,ctx,engagement,"CANONICAL_MODEL_ACCOUNT_CHANGED","CANONICAL_ACCOUNT",accountId,
+        { version,displayName:command.displayName,presentationGroup:command.presentationGroup,
+          displayOrder:command.displayOrder,isActive:command.isActive });
+      return (await canonicalModelItems(tx,ctx,engagementId)).find(row=>String(row.id)===accountId)!;
+    });
+    return json({item});
+  } finally { await sql.end(); }
+}
+
+async function resetCanonicalModel(
+  request: Request,
+  env: Env,
+  actorId: string,
+  engagementId: string,
+): Promise<Response> {
+  const ctx=context(request,actorId),sql=db(env);
+  try {
+    const items=await withTenantTransaction(sql,ctx,async(tx)=>{
+      const engagement=await engagementAccess(tx,ctx,engagementId,WRITE_ROLES);
+      await tx`select id from engagement where id=${engagementId} and tenant_id=${ctx.tenantId} for update`;
+      const current=await canonicalModelItems(tx,ctx,engagementId);
+      const customIds=current.filter(row=>Boolean(row.is_custom)&&Boolean(row.is_active)).map(row=>String(row.id));
+      if(customIds.length){
+        const uses=await tx`select 1 from trial_balance_line tbl
+            join trial_balance tb on tb.id=tbl.trial_balance_id and tb.tenant_id=tbl.tenant_id
+            where tb.tenant_id=${ctx.tenantId} and tb.engagement_id=${engagementId}
+              and tbl.canonical_account_id in ${tx(customIds)}
+          union all
+          select 1 from journal_line jl join journal j on j.id=jl.journal_id and j.tenant_id=jl.tenant_id
+            where j.tenant_id=${ctx.tenantId} and j.engagement_id=${engagementId}
+              and jl.canonical_account_id in ${tx(customIds)} limit 1`;
+        if(uses.length)throw new ApiError(409,"CUSTOM_MODEL_ACCOUNT_IN_USE","Remap custom accounts before resetting the model");
+      }
+      for(const row of current){
+        if(Number(row.model_version)===0&&!Boolean(row.is_custom))continue;
+        await tx`insert into engagement_canonical_model_override(id,tenant_id,engagement_id,
+            canonical_account_id,version,display_name,presentation_group,display_order,is_active,
+            change_reason,created_by)
+          values(${crypto.randomUUID()},${ctx.tenantId},${engagementId},${String(row.id)},
+            ${Number(row.model_version)+1},${String(row.standard_name)},null,0,${!Boolean(row.is_custom)},
+            'Reset to standard model',${ctx.actorId})`;
+      }
+      await appendEvents(tx,ctx,engagement,"CANONICAL_MODEL_RESET","ENGAGEMENT_CANONICAL_MODEL",engagementId,
+        { resetEntries:current.filter(row=>Number(row.model_version)>0||Boolean(row.is_custom)).length });
+      return canonicalModelItems(tx,ctx,engagementId);
+    });
+    return json({items});
+  } finally { await sql.end(); }
+}
 async function canonicalAccounts(
   request: Request,
   env: Env,
@@ -5511,9 +5717,16 @@ async function canonicalAccounts(
   const url = new URL(request.url);
   const taxonomyVersion =
     url.searchParams.get("taxonomyVersion") ?? "UK-CANONICAL-2026";
+  const engagementId = url.searchParams.get("engagementId");
   try {
     return await withTenantTransaction(sql, ctx, async (tx) => {
       await tenantRole(tx, ctx);
+      if (engagementId) {
+        await engagementAccess(tx,ctx,engagementId);
+        return json({items:(await canonicalModelItems(tx,ctx,engagementId,false)).filter(
+          row=>String(row.taxonomy_version)===taxonomyVersion,
+        )});
+      }
       return json({
         items:
           await tx`select id,taxonomy_version,canonical_code,name,report_line,normal_balance
@@ -5694,6 +5907,18 @@ export default {
         );
         const mappingRoute = url.pathname.match(
           /^\/v1\/engagements\/([^/]+)\/mappings$/,
+        );
+        const canonicalModelRoute = url.pathname.match(
+          /^\/v1\/engagements\/([^/]+)\/canonical-model$/,
+        );
+        const canonicalModelAccountsRoute = url.pathname.match(
+          /^\/v1\/engagements\/([^/]+)\/canonical-model\/accounts$/,
+        );
+        const canonicalModelAccountRoute = url.pathname.match(
+          /^\/v1\/engagements\/([^/]+)\/canonical-model\/accounts\/([^/]+)$/,
+        );
+        const canonicalModelResetRoute = url.pathname.match(
+          /^\/v1\/engagements\/([^/]+)\/canonical-model\/reset$/,
         );
         const tbRoute = url.pathname.match(
           /^\/v1\/engagements\/([^/]+)\/trial-balance$/,
@@ -6259,6 +6484,15 @@ export default {
           response = await importCsv(request, env, actorId, importRoute[1]!);
         else if (request.method === "POST" && mappingRoute)
           response = await mapAccount(request, env, actorId, mappingRoute[1]!);
+        else if (request.method === "GET" && canonicalModelRoute)
+          response = await canonicalModel(request,env,actorId,canonicalModelRoute[1]!);
+        else if (request.method === "POST" && canonicalModelAccountsRoute)
+          response = await createCanonicalModelAccount(request,env,actorId,canonicalModelAccountsRoute[1]!);
+        else if (request.method === "PATCH" && canonicalModelAccountRoute)
+          response = await updateCanonicalModelAccount(request,env,actorId,
+            canonicalModelAccountRoute[1]!,canonicalModelAccountRoute[2]!);
+        else if (request.method === "POST" && canonicalModelResetRoute)
+          response = await resetCanonicalModel(request,env,actorId,canonicalModelResetRoute[1]!);
         else if (request.method === "GET" && tbRoute)
           response = await engagementTrialBalance(
             request,
