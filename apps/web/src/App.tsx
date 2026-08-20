@@ -1825,6 +1825,7 @@ function AccountsWorkspace({
                 <MappingView
                   lines={lines}
                   options={options}
+                  canonicalAccounts={canonicalAccounts}
                   mapped={mapped}
                   unmapped={unmapped}
                   saving={saving}
@@ -4828,6 +4829,7 @@ function PanelHead({
 function MappingView({
   lines,
   options,
+  canonicalAccounts,
   mapped,
   unmapped,
   saving,
@@ -4837,6 +4839,7 @@ function MappingView({
 }: {
   lines: TrialBalanceLine[];
   options: string[][];
+  canonicalAccounts: CanonicalAccount[];
   mapped: number;
   unmapped: number;
   saving: string;
@@ -4844,6 +4847,34 @@ function MappingView({
   taxonomyError: string;
   onRetryTaxonomy: () => void;
 }) {
+  const [selectedSourceAccountId, setSelectedSourceAccountId] = useState("");
+  const unmappedLines = lines.filter((line) => !line.canonical_account_id);
+  const selectedSource = unmappedLines.find(
+    (line) => line.source_account_id === selectedSourceAccountId,
+  );
+  const canonicalGroups = useMemo(() => {
+    const groups = new Map<string, CanonicalAccount[]>();
+    canonicalAccounts.forEach((account) => {
+      const reportLine = account.report_line || "Other";
+      groups.set(reportLine, [...(groups.get(reportLine) || []), account]);
+    });
+    return [...groups.entries()];
+  }, [canonicalAccounts]);
+  function mapSource(line: TrialBalanceLine, canonicalAccountId: string) {
+    onSave(line, canonicalAccountId);
+    setSelectedSourceAccountId("");
+  }
+  function dropOnCanonical(
+    event: React.DragEvent<HTMLDivElement>,
+    canonicalAccountId: string,
+  ) {
+    event.preventDefault();
+    const sourceAccountId = event.dataTransfer.getData("text/plain");
+    const line = unmappedLines.find(
+      (item) => item.source_account_id === sourceAccountId,
+    );
+    if (line) mapSource(line, canonicalAccountId);
+  }
   return (
     <div className="mapping-layout">
       <section className="panel">
@@ -4869,8 +4900,144 @@ function MappingView({
             body="Import a trial balance before mapping source accounts."
           />
         ) : (
-          <div className="table-wrap">
-            <Table size="small" aria-label="Account mapping">
+          <>
+            <section
+              className="canonical-mapping-model"
+              aria-labelledby="canonical-model-title"
+            >
+              <header className="canonical-model-heading">
+                <div>
+                  <Text
+                    id="canonical-model-title"
+                    as="h3"
+                    size={400}
+                    weight="semibold"
+                  >
+                    Canonical model
+                  </Text>
+                  <Text as="p" size={200}>
+                    Drag an unmapped source account to its destination, or select
+                    a source and then choose a canonical account. The table below
+                    remains available as an equivalent mapper.
+                  </Text>
+                </div>
+                <Badge
+                  appearance="tint"
+                  color={unmapped ? "warning" : "success"}
+                >
+                  {unmapped} unmapped
+                </Badge>
+              </header>
+              <div className="canonical-model-workspace">
+                <section
+                  className="unmapped-source-panel"
+                  aria-labelledby="unmapped-source-title"
+                >
+                  <Text
+                    id="unmapped-source-title"
+                    as="h4"
+                    size={300}
+                    weight="semibold"
+                  >
+                    Unmapped source accounts
+                  </Text>
+                  {!unmappedLines.length ? (
+                    <Text className="canonical-model-empty" size={200}>
+                      All source accounts are mapped.
+                    </Text>
+                  ) : (
+                    <ul className="unmapped-source-list">
+                      {unmappedLines.map((line) => (
+                        <li key={line.source_account_id}>
+                          <FluentButton
+                            appearance={
+                              selectedSourceAccountId === line.source_account_id
+                                ? "primary"
+                                : "secondary"
+                            }
+                            aria-pressed={
+                              selectedSourceAccountId === line.source_account_id
+                            }
+                            className="unmapped-source-account"
+                            disabled={Boolean(saving)}
+                            draggable={!saving}
+                            onClick={() =>
+                              setSelectedSourceAccountId(line.source_account_id)
+                            }
+                            onDragStart={(event) => {
+                              event.dataTransfer.effectAllowed = "move";
+                              event.dataTransfer.setData(
+                                "text/plain",
+                                line.source_account_id,
+                              );
+                              setSelectedSourceAccountId(line.source_account_id);
+                            }}
+                          >
+                            <span>
+                              <b>{line.account_code}</b>
+                              <small>{line.account_name}</small>
+                            </span>
+                            <span className="number">{money(amount(line))}</span>
+                          </FluentButton>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+                <div className="canonical-destination-panel">
+                  {canonicalGroups.map(([reportLine, accounts]) => (
+                    <section className="canonical-report-group" key={reportLine}>
+                      <Text as="h4" size={300} weight="semibold">
+                        {title(reportLine)}
+                      </Text>
+                      <div className="canonical-account-grid">
+                        {accounts.map((account) => (
+                          <div
+                            className="canonical-account-target"
+                            key={account.id}
+                            onDragOver={(event) => {
+                              event.preventDefault();
+                              event.dataTransfer.dropEffect = "move";
+                            }}
+                            onDrop={(event) =>
+                              dropOnCanonical(event, account.id)
+                            }
+                          >
+                            <FluentButton
+                              appearance="subtle"
+                              aria-label={
+                                selectedSource
+                                  ? `Map ${selectedSource.account_code} ${selectedSource.account_name} to ${account.canonical_code} ${account.name}`
+                                  : `${account.canonical_code} ${account.name}; select a source account first`
+                              }
+                              disabled={!selectedSource || Boolean(saving)}
+                              onClick={() =>
+                                selectedSource &&
+                                mapSource(selectedSource, account.id)
+                              }
+                            >
+                              <span>
+                                <b>{account.canonical_code}</b>
+                                <small>{account.name}</small>
+                              </span>
+                              <Badge
+                                appearance="tint"
+                                color="subtle"
+                                size="small"
+                              >
+                                {title(account.normal_balance)}
+                              </Badge>
+                            </FluentButton>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              </div>
+            </section>
+            <div className="table-wrap">
+              <Table size="small" aria-label="Account mapping">
               <TableHeader>
                 <TableRow>
                   <TableHeaderCell>Source account</TableHeaderCell>
@@ -4917,8 +5084,9 @@ function MappingView({
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
-          </div>
+              </Table>
+            </div>
+          </>
         )}
       </section>
       <aside className="mapping-control" aria-labelledby="mapping-control-title">
