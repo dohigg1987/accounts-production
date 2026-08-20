@@ -1,13 +1,13 @@
 :root {
   font-family: "Segoe UI", SegoeUI, system-ui, sans-serif;
-  color: #18252c;
-  background: #f3f6f6;
-  --ink: #18252c;
-  --muted: #6d7d82;
-  --border: #dce4e4;
-  --navy: #12313a;
-  --teal: #087d78;
-  --danger: #b42318;
+  color: var(--colorNeutralForeground1);
+  background: var(--colorNeutralBackground3);
+  --ink: var(--colorNeutralForeground1);
+  --muted: var(--colorNeutralForeground3);
+  --border: var(--colorNeutralStroke2);
+  --navy: var(--colorNeutralBackgroundInverted);
+  --teal: var(--colorBrandBackground);
+  --danger: var(--colorStatusDangerForeground1);
 }
 * {
   box-sizing: border-box;
